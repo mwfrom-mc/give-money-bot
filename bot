@@ -1,0 +1,139 @@
+import asyncio
+import datetime
+import threading
+
+from disnake.ext import commands
+import disnake
+
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters.command import Command
+from aiogram.methods import DeleteWebhook
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from mcc import mcc
+import logging
+
+from tortoise import Tortoise
+from tortoise import Model
+from tortoise.fields import CharField, IntField, DatetimeField
+
+logging.basicConfig()
+
+logger = logging.getLogger("mcc")
+
+bot = Bot("TG TOKEN")
+dispatcher = Dispatcher()
+
+# intents = disnake.Intents.default()
+# intents.message_content = True
+
+# ds = commands.Bot(command_prefix='!', intents=intents)
+
+
+# @ds.command()
+# async def get(ctx: commands.Context, nickname):
+#    today_transactions = await User.filter(id=str(ctx.author.id), date__gte=datetime.date.today())
+#    if len(today_transactions) > 0:
+#        await ctx.reply("Ты уже получал деньги за сегодня. Приходи завтра!")
+#        return
+#
+#    user = await User.get_or_none(id=str(ctx.author.id))
+#    if user is None:
+#        user = await User.create(id=str(ctx.author.id), name=nickname)
+#
+#    user.date = datetime.datetime.now()
+#    await user.save()
+#
+#    await client.send_message(f"/send /pay {nickname} {i}000")
+#    await client.send_message(f"/send /pay {nickname} {i}000")
+#    await ctx.reply(f"Отправил деньги на ник {nickname}")
+
+
+client = mcc.MccPyClient(
+    host="127.0.0.1",
+    port=8043,
+    password="",
+    logger=logger)
+
+i = 0
+
+DATABASE_URL = "sqlite:///D:\blabla/bebebe/users.db"
+
+
+class User(Model):
+    id = IntField(primary_key=True)
+    name = CharField(max_length=255)
+    date = DatetimeField(auto_now=True)
+
+
+@dispatcher.message(Command("get"))
+async def start_command(message: types.Message):
+    if message.chat.id != -1002344240052 or message.message_thread_id != 2648:
+        return
+    if len(message.text.split()) < 2:
+        await message.reply("Пиши /get ник!")
+        return
+
+    confirm_button = InlineKeyboardButton(text="Получить деньги!", callback_data=f"confirm {message.text.split()[1]}")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[confirm_button]])
+
+    await message.reply(f"*Проверь, что твой ник {message.text.split()[1]}!* _И не забудь зайти на сервер на 2 скайблок._ "
+                        "\nЕсли что-то пойдёт не так по твоей вине, деньги ты сегодня не получишь!",
+                        parse_mode="markdown", reply_markup=keyboard, disable_web_page_preview=True)
+
+
+@dispatcher.callback_query(lambda c: "confirm" in c.data)
+async def confirm_callback(callback_query: types.CallbackQuery):
+    message = callback_query.message
+    user_id = message.reply_to_message.from_user.id
+    if user_id != callback_query.from_user.id:
+        await bot.answer_callback_query(callback_query.id, text="Это не твоя кнопка!", show_alert=True)
+        return
+
+    today_transactions = await User.filter(id=str(message.reply_to_message.from_user.id), date__gte=datetime.date.today())
+    if len(today_transactions) > 0:
+        await message.edit_text("Ты уже получал деньги за сегодня. Приходи завтра!")
+        return
+
+    await client.send_message(f"/send /pay {callback_query.data.split()[1]} {i}000")
+    await client.send_message(f"/send /pay {callback_query.data.split()[1]} {i}000")
+
+    user = await User.get_or_none(id=str(user_id))
+    if user is None:
+        user = await User.create(id=str(user_id), name=callback_query.data.split()[1])
+
+    user.date = datetime.datetime.now()
+    await user.save()
+
+    await message.edit_text("*Я отправил тебе деньги.* _Если они почему-то не пришли тебе, напиши в поддержку @blablablabot)", parse_mode="markdown", disable_web_page_preview=True)
+
+
+async def b():
+        await bot.send_message(-1001234567890, "*Раздача запущена!* \nКак получить можно узнать [тут](https://t.me/aaaaaa)", parse_mode="markdown", disable_web_page_preview=True, message_thread_id=2648)
+        await bot(DeleteWebhook(drop_pending_updates=True))
+        await dispatcher.start_polling(bot)
+
+
+async def m():
+    await client.connect()
+    await client.keep_alive()
+
+
+async def main():
+    global i
+    # x 1000 to pay
+    i = "200"
+    await Tortoise.init(
+        db_url=DATABASE_URL,
+        modules={"models": ["__main__"]}
+    )
+    await Tortoise.generate_schemas()
+    t1 = asyncio.create_task(b())
+    t2 = asyncio.create_task(m())
+
+    await t1
+    await t2
+
+
+# t = threading.Thread(target=ds.run, args=("DISCORD BOT (OPTIONAL)", ))
+# t.start()
+asyncio.run(main())
